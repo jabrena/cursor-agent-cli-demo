@@ -50,7 +50,8 @@ jobs:
         run: |
           docker run --rm ${{ env.IMAGE_NAME }} cursor-agent --version || true
           echo "Container logs:"
-          docker run --rm -e CURSOR_API_KEY=${{ secrets.CURSOR_API_KEY }} ${{ env.IMAGE_NAME }} cursor-agent --help
+          PROMPT_CONTENT=$(cat prompt-demo.md)
+          docker run --rm -e CURSOR_API_KEY=${{ secrets.CURSOR_API_KEY }} -e PROMPT="$PROMPT_CONTENT" ${{ env.IMAGE_NAME }}
 
       # - name: Build and push Docker image
       #   uses: docker/build-push-action@v5

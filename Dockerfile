@@ -19,9 +19,13 @@ ENV PATH="/root/.local/bin:${PATH}"
 # Example: docker run -e CURSOR_API_KEY=your_key_here
 ENV CURSOR_API_KEY=""
 
+# Set the prompt parameter (should be provided at runtime)
+# Example: docker run -e PROMPT="your prompt text here"
+ENV PROMPT=""
+
 # Verify the installation
 RUN cursor-agent --version || true
 
-# Set the default command
-CMD ["cursor-agent", "--help"]
-
+# Set the default command to use the prompt parameter
+# If PROMPT is provided, it will be passed to cursor-agent
+CMD if [ -n "$PROMPT" ]; then cursor-agent "$PROMPT"; else cursor-agent --help; fi
