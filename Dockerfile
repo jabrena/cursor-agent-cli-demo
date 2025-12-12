@@ -116,6 +116,48 @@ CMD if [ -n "$GIT_REPOSITORY" ]; then \
       echo "=== Cursor Agent Execution:==="; \
       echo ""; \
       cursor-agent -p --force --output-format "$OUTPUT_FORMAT" "$PROMPT"; \
+      if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPOSITORY" ]; then \
+        cd /workspace && \
+        git fetch origin 2>/dev/null || true && \
+        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "") && \
+        DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | cut -d" " -f5 || \
+                         git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || \
+                         (git ls-remote --symref origin HEAD | grep -oP 'refs/heads/\K[^\t]+' || echo "main")) && \
+        if [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" != "$DEFAULT_BRANCH" ] && [ "$CURRENT_BRANCH" != "HEAD" ]; then \
+          echo ""; \
+          echo "=== Creating Pull Request:==="; \
+          echo "Branch: $CURRENT_BRANCH"; \
+          echo "Base: $DEFAULT_BRANCH"; \
+          PR_TITLE="Automated PR: Changes from cursor-agent" && \
+          PR_BODY="This PR was automatically created by cursor-agent." && \
+          PR_RESPONSE=$(curl -s -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/pulls" \
+            -d "{\"title\":\"$PR_TITLE\",\"body\":\"$PR_BODY\",\"head\":\"$CURRENT_BRANCH\",\"base\":\"$DEFAULT_BRANCH\"}") && \
+          PR_URL=$(echo "$PR_RESPONSE" | grep -o '"html_url":"[^"]*"' | head -1 | cut -d'"' -f4) && \
+          if [ -n "$PR_URL" ]; then \
+            echo "Pull Request created successfully!"; \
+            echo "PR URL: $PR_URL"; \
+          else \
+            PR_ERROR=$(echo "$PR_RESPONSE" | grep -o '"message":"[^"]*"' | head -1 | cut -d'"' -f4) && \
+            if [ -n "$PR_ERROR" ]; then \
+              if echo "$PR_ERROR" | grep -q "already exists"; then \
+                echo "Pull Request already exists for branch: $CURRENT_BRANCH"; \
+                echo "PR URL: https://github.com/$GITHUB_REPOSITORY/pull/new/$CURRENT_BRANCH"; \
+              else \
+                echo "Failed to create PR: $PR_ERROR"; \
+                echo "You can create it manually at: https://github.com/$GITHUB_REPOSITORY/pull/new/$CURRENT_BRANCH"; \
+              fi; \
+            else \
+              echo "Failed to create PR. Response: $PR_RESPONSE"; \
+              echo "You can create it manually at: https://github.com/$GITHUB_REPOSITORY/pull/new/$CURRENT_BRANCH"; \
+            fi; \
+          fi; \
+        else \
+          echo "No feature branch detected or already on default branch. Skipping PR creation."; \
+        fi; \
+      fi; \
     else \
       cursor-agent --help; \
     fi
