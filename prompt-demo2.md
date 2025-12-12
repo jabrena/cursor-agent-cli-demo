@@ -22,6 +22,10 @@ Follow the next steps to achieve the goal.
 - Don't create any test class
 - Don't touch the build file (pom.xml)
 
+## Output format
+
+- Explain the process
+
 ## Acceptance Criteria
 
 The goal will be achieved if the following criteria are met:
