@@ -126,7 +126,7 @@ CMD if [ -n "$GIT_REPOSITORY" ]; then \
       echo "$PROMPT"; \
       echo ""; \
       echo "=== Available Models:==="; \
-      cursor-agent --models 2>&1 || cursor-agent --help | grep -i model || echo "Models information not available"; \
+      cursor-agent --model 2>&1 || cursor-agent --help | grep -i model || echo "Models information not available"; \
       echo ""; \
       echo "=== Cursor Agent Execution:==="; \
       echo ""; \
