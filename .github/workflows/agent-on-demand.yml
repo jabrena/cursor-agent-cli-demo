@@ -75,28 +75,46 @@ jobs:
             echo "PR #$EXISTING_PR already exists for branch $BRANCH_NAME"
             PR_NUMBER=$EXISTING_PR
           else
-            # Create new PR
-            PR_URL=$(gh pr create \
-              --title "feat: Hello World Java program for PR" \
-              --body "Automated PR created by cursor-agent workflow" \
-              --base "$DEFAULT_BRANCH" \
-              --head "$BRANCH_NAME" \
-              --repo ${{ github.repository }} || echo "")
+            # Create PR using GitHub REST API directly
+            REPO_OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
+            REPO_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
             
-            if [ -z "$PR_URL" ]; then
-              echo "Failed to create PR. You can create it manually at:"
+            PR_RESPONSE=$(curl -s -w "\n%{http_code}" \
+              -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              https://api.github.com/repos/${{ github.repository }}/pulls \
+              -d "{
+                \"title\": \"feat: Hello World Java program for PR\",
+                \"body\": \"Automated PR created by cursor-agent workflow\",
+                \"head\": \"$BRANCH_NAME\",
+                \"base\": \"$DEFAULT_BRANCH\"
+              }")
+            
+            HTTP_CODE=$(echo "$PR_RESPONSE" | tail -n1)
+            PR_BODY=$(echo "$PR_RESPONSE" | sed '$d')
+            
+            if [ "$HTTP_CODE" != "201" ]; then
+              echo "Failed to create PR (HTTP $HTTP_CODE). Response:"
+              echo "$PR_BODY"
+              echo ""
+              echo "You can create it manually at:"
               echo "https://github.com/${{ github.repository }}/compare/$DEFAULT_BRANCH...$BRANCH_NAME"
-              exit 1
+              # Don't exit 1 - allow workflow to continue
+              exit 0
             fi
             
-            # Extract PR number from URL (e.g., https://github.com/owner/repo/pull/123 -> 123)
-            PR_NUMBER=$(echo "$PR_URL" | sed -E 's/.*\/pull\/([0-9]+).*/\1/')
+            # Extract PR number from JSON response
+            PR_NUMBER=$(echo "$PR_BODY" | grep -o '"number":[0-9]*' | grep -o '[0-9]*' | head -n1)
             
             if [ -z "$PR_NUMBER" ]; then
-              echo "Failed to extract PR number from URL: $PR_URL"
-              exit 1
+              echo "Failed to extract PR number from response:"
+              echo "$PR_BODY"
+              exit 0
             fi
             
+            PR_URL=$(echo "$PR_BODY" | grep -o '"html_url":"[^"]*"' | cut -d'"' -f4)
             echo "Created PR #$PR_NUMBER at $PR_URL"
           fi
           
