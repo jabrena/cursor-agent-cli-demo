@@ -51,5 +51,5 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_ACTOR: ${{ github.actor }}
         run: |
-          chmod +x create-pr.sh
-          ./create-pr.sh
+          chmod +x .github/scripts/create-pr.sh
+          .github/scripts/create-pr.sh

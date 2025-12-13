@@ -80,18 +80,49 @@ echo -e "\n${YELLOW}=== Creating feature branch and committing changes ===${NC}"
 BRANCH_NAME="cursor-agent/$(date +%Y%m%d-%H%M%S)"
 echo "Branch name: $BRANCH_NAME"
 
-# Check if there are any changes
-if [ -z "$(git status --porcelain)" ]; then
-    echo -e "${YELLOW}No changes to commit${NC}"
-else
-    git checkout -B "$BRANCH_NAME"
+# Show current branch and status
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+echo "Current branch: $CURRENT_BRANCH"
+echo "Working directory status:"
+git status --short || true
+
+# Create the feature branch from current state (preserves any uncommitted changes)
+git checkout -B "$BRANCH_NAME"
+
+# Stage and commit any changes
+HAS_CHANGES=false
+if [ -n "$(git status --porcelain)" ]; then
+    echo "Staging all changes..."
     git add -A
     
-    if git diff --staged --quiet; then
-        echo -e "${YELLOW}No changes to commit${NC}"
+    if ! git diff --staged --quiet; then
+        git commit -m "feat: Hello World Java program for PR"
+        echo -e "${GREEN}Committed changes${NC}"
+        HAS_CHANGES=true
     else
-        git commit -m "feat: Hello World Java program for PR" || echo "No changes to commit"
+        echo -e "${YELLOW}No staged changes to commit${NC}"
     fi
+else
+    echo -e "${YELLOW}No changes detected in working directory${NC}"
+fi
+
+# Verify branch has commits
+if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+    echo -e "${RED}Error: Branch has no commits${NC}"
+    exit 1
+fi
+
+# Check if branch differs from base branch
+COMMIT_COUNT=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || echo "0")
+DIFF_COUNT=$(git diff --name-only "$DEFAULT_BRANCH"..HEAD 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+
+echo "Commits ahead of $DEFAULT_BRANCH: $COMMIT_COUNT"
+echo "Files changed: $DIFF_COUNT"
+
+if [ "$COMMIT_COUNT" -eq 0 ] && [ "$DIFF_COUNT" -eq 0 ]; then
+    echo -e "${YELLOW}No differences from $DEFAULT_BRANCH. Creating empty commit to enable PR...${NC}"
+    git commit --allow-empty -m "feat: Hello World Java program for PR (no changes detected)"
+    HAS_CHANGES=true
 fi
 
 # Push branch
@@ -100,6 +131,13 @@ git push origin "$BRANCH_NAME" || {
     echo -e "${RED}Error: Failed to push branch. Make sure you have push access.${NC}"
     exit 1
 }
+
+# Verify branch exists on remote
+echo "Verifying branch exists on remote..."
+sleep 2  # Give GitHub a moment to process
+if ! git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+    echo -e "${YELLOW}Warning: Branch may not be visible on remote yet${NC}"
+fi
 
 # Export BRANCH_NAME for GitHub Actions (if GITHUB_ENV is set)
 if [ -n "$GITHUB_ENV" ]; then
@@ -147,9 +185,35 @@ if [ "$HTTP_CODE" = "201" ]; then
     fi
 else
     echo -e "${RED}Failed to create PR (HTTP $HTTP_CODE)${NC}"
+    
+    # Extract and display error message from GitHub API response
+    if command -v jq &> /dev/null && [ -n "$BODY" ]; then
+        ERROR_MSG=$(echo "$BODY" | jq -r '.message // .errors[0].message // empty' 2>/dev/null || echo "")
+        if [ -n "$ERROR_MSG" ] && [ "$ERROR_MSG" != "null" ]; then
+            echo -e "${RED}GitHub API Error: $ERROR_MSG${NC}"
+        fi
+        # Show full error details for debugging
+        echo -e "${YELLOW}Full API response:${NC}"
+        echo "$BODY" | jq '.' 2>/dev/null || echo "$BODY"
+    else
+        echo -e "${YELLOW}API Response:${NC}"
+        echo "$BODY"
+    fi
+    
     if [ "$HTTP_CODE" = "403" ]; then
         echo -e "${RED}Error: Enable 'Allow GitHub Actions to create and approve pull requests' in repository settings, or use PAT_TOKEN${NC}"
+    elif [ "$HTTP_CODE" = "422" ]; then
+        echo -e "${RED}Error: Validation failed. Common causes:${NC}"
+        echo "  - Branch '$BRANCH_NAME' doesn't exist on remote"
+        echo "  - No differences between '$BRANCH_NAME' and '$DEFAULT_BRANCH'"
+        echo "  - Branch name is invalid or already exists"
+        echo ""
+        echo "Checking branch status..."
+        git ls-remote --heads origin "$BRANCH_NAME" && echo "✓ Branch exists on remote" || echo "✗ Branch NOT found on remote"
+        git log --oneline "$DEFAULT_BRANCH..$BRANCH_NAME" 2>/dev/null | head -5 || echo "No commits difference found"
     fi
+    
+    echo ""
     echo "Create manually: https://github.com/$GITHUB_REPO/compare/$DEFAULT_BRANCH...$BRANCH_NAME"
     exit 1
 fi
